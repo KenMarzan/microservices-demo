@@ -1,0 +1,142 @@
+name: Monitoring - Validate Metrics Collection
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "monitoring/**"
+      - "docker-compose.monitoring.yml"
+      - ".github/workflows/monitoring-test.yml"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "monitoring/**"
+      - "docker-compose.monitoring.yml"
+
+jobs:
+  validate-monitoring:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build all images
+        run: docker-compose build --no-cache
+
+      - name: Start application services
+        run: |
+          docker-compose up -d
+          sleep 20
+
+      - name: Start monitoring stack
+        run: |
+          docker-compose -f docker-compose.monitoring.yml up -d
+          sleep 10
+
+      - name: Verify Prometheus is running
+        run: |
+          echo "=== Prometheus Health Check ==="
+          curl -f http://localhost:9090/-/healthy
+
+          echo "=== Prometheus Status ==="
+          curl -s http://localhost:9090/api/v1/status/runtimeinfo | jq '.data'
+
+      - name: Check Prometheus targets
+        run: |
+          echo "=== Active Targets Status ==="
+          curl -s http://localhost:9090/api/v1/targets | jq '.data | {
+            total_active: (.activeTargets | length),
+            healthy: [.activeTargets[] | select(.health=="up")] | length,
+            unhealthy: [.activeTargets[] | select(.health=="down")] | length,
+            targets: [.activeTargets[] | {job: .labels.job, health: .health, error: .lastError}]
+          }'
+
+      - name: Verify frontend metrics
+        run: |
+          echo "=== Frontend Metrics Status ==="
+          FRONTEND_HEALTH=$(curl -s http://localhost:9090/api/v1/targets | jq -r '.data.activeTargets[] | select(.labels.job=="frontend") | .health')
+
+          if [ "$FRONTEND_HEALTH" != "up" ]; then
+            echo "ERROR: Frontend target is not healthy: $FRONTEND_HEALTH"
+            exit 1
+          fi
+
+          echo "Frontend target is UP"
+
+          echo "=== Sample Frontend Metrics ==="
+          curl -s http://localhost:9090/api/v1/query?query=http_requests_total | jq '.data.result[0:3]'
+
+      - name: Verify checkout metrics
+        run: |
+          echo "=== Checkout Metrics Status ==="
+          CHECKOUT_HEALTH=$(curl -s http://localhost:9090/api/v1/targets | jq -r '.data.activeTargets[] | select(.labels.job=="checkoutservice") | .health')
+
+          if [ "$CHECKOUT_HEALTH" != "up" ]; then
+            echo "ERROR: Checkout target is not healthy: $CHECKOUT_HEALTH"
+            exit 1
+          fi
+
+          echo "Checkout target is UP"
+
+          echo "=== Sample Checkout Metrics ==="
+          curl -s http://localhost:9090/api/v1/query?query=grpc_server_handled_total | jq '.data.result[0:3]'
+
+      - name: Verify Grafana connectivity to Prometheus
+        run: |
+          echo "=== Grafana Health Check ==="
+          curl -f http://localhost:3000/api/health
+
+          echo "=== Grafana Datasources ==="
+          curl -s http://admin:admin@localhost:3000/api/datasources | jq '.[] | {name: .name, type: .type, url: .url}'
+
+      - name: Query metrics across time range
+        run: |
+          echo "=== Checking metric availability over time ==="
+          curl -s 'http://localhost:9090/api/v1/query_range?query=up&start=0&end=9999999999&step=60' | jq '.data | {
+            metric_name: .resultType,
+            series_count: (.result | length),
+            time_steps: (.result[0].values | length)
+          }'
+
+      - name: Test Prometheus query performance
+        run: |
+          echo "=== Query Performance Test ==="
+
+          # Simple query
+          START=$(date +%s%N | cut -b1-13)
+          curl -s http://localhost:9090/api/v1/query?query=up > /dev/null
+          END=$(date +%s%N | cut -b1-13)
+          SIMPLE=$((END - START))
+          echo "Simple query time: ${SIMPLE}ms"
+
+          # Complex query
+          START=$(date +%s%N | cut -b1-13)
+          curl -s 'http://localhost:9090/api/v1/query?query=rate(http_requests_total[5m])' > /dev/null
+          END=$(date +%s%N | cut -b1-13)
+          COMPLEX=$((END - START))
+          echo "Complex query time: ${COMPLEX}ms"
+
+          if [ "$SIMPLE" -gt 5000 ] || [ "$COMPLEX" -gt 10000 ]; then
+            echo "WARNING: Queries are slow"
+          fi
+
+      - name: Export Prometheus config for audit
+        if: always()
+        run: |
+          echo "=== Prometheus Configuration ==="
+          curl -s http://localhost:9090/api/v1/status/config | jq '.data.yaml' -r
+
+      - name: Collect monitoring logs on failure
+        if: failure()
+        run: |
+          echo "=== Prometheus Logs ==="
+          docker logs prometheus | tail -100
+
+          echo "=== Grafana Logs ==="
+          docker logs grafana | tail -100
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker-compose -f docker-compose.monitoring.yml down -v || true
+          docker-compose down -v || true

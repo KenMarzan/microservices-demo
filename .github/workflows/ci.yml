@@ -1,0 +1,101 @@
+name: CI - Build & Test Microservices
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker images
+        run: |
+          docker-compose build --no-cache
+
+      - name: Start microservices stack
+        run: |
+          docker-compose up -d
+          echo "Waiting for services to start..."
+          sleep 15
+
+      - name: Start monitoring stack
+        run: |
+          docker-compose -f docker-compose.monitoring.yml up -d
+          echo "Waiting for monitoring to start..."
+          sleep 10
+
+      - name: Check service health
+        run: |
+          echo "=== Checking Docker Compose Services ==="
+          docker-compose ps
+
+          echo "=== Checking if frontend responds ==="
+          curl -f http://localhost:8080 || exit 1
+
+          echo "=== Checking if checkout responds ==="
+          curl -f http://localhost:5050 || exit 1
+
+          echo "=== All services are running ==="
+
+      - name: Validate Prometheus setup
+        run: |
+          echo "=== Checking Prometheus targets ==="
+          curl -s http://localhost:9090/api/v1/targets | jq '.data.activeTargets[] | {job: .labels.job, health: .health}' | head -20
+
+          echo "=== Verifying Prometheus has collected metrics ==="
+          TARGETS_UP=$(curl -s http://localhost:9090/api/v1/query?query=up | jq '[.data.result[] | select(.value[1]=="1")] | length')
+          echo "Targets UP: $TARGETS_UP"
+
+          if [ "$TARGETS_UP" -lt 2 ]; then
+            echo "ERROR: Less than 2 targets are up!"
+            exit 1
+          fi
+
+      - name: Verify metrics collection
+        run: |
+          echo "=== Checking HTTP request metrics from frontend ==="
+          curl -s http://localhost:9090/api/v1/query?query=http_requests_total | jq '.data.result[] | {metric: .metric.handler, count: .value[1]}' | head -20
+
+          echo "=== Checking metrics from checkout ==="
+          curl -s http://localhost:9090/api/v1/query?query=grpc_server_handled_total | jq '.data.result[] | {service: .metric.grpc_service, method: .metric.grpc_method}' | head -10
+
+      - name: Run load generator
+        run: |
+          echo "=== Starting load generator for 30 seconds ==="
+          docker-compose exec -T loadgenerator sh -c "timeout 30 python -m locust -f locustfile.py --headless -u 5 -r 2 --run-time 30s" || true
+          sleep 5
+
+      - name: Verify metrics after load
+        run: |
+          echo "=== Checking increased metrics after load ==="
+          METRICS_COUNT=$(curl -s http://localhost:9090/api/v1/query?query=http_requests_total | jq '.data.result | length')
+          echo "Total metric series: $METRICS_COUNT"
+
+          if [ "$METRICS_COUNT" -eq 0 ]; then
+            echo "WARNING: No metrics collected after load test"
+          fi
+
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          echo "=== Frontend logs ==="
+          docker logs frontend | tail -50
+          echo "=== Checkout logs ==="
+          docker logs checkoutservice | tail -50
+          echo "=== Prometheus logs ==="
+          docker logs prometheus | tail -50
+
+      - name: Cleanup
+        if: always()
+        run: |
+          echo "=== Stopping all services ==="
+          docker-compose -f docker-compose.monitoring.yml down -v || true
+          docker-compose down -v || true

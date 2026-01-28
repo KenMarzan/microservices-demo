@@ -1,0 +1,143 @@
+name: Build & Push Docker Images
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+
+      - name: Build and push frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./src/frontend
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:${{ github.sha }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Build and push checkoutservice
+        uses: docker/build-push-action@v5
+        with:
+          context: ./src/checkoutservice
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/checkoutservice:${{ github.sha }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Build and push productcatalogservice
+        uses: docker/build-push-action@v5
+        with:
+          context: ./src/productcatalogservice
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/productcatalogservice:${{ github.sha }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Build and push currencyservice
+        uses: docker/build-push-action@v5
+        with:
+          context: ./src/currencyservice
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/currencyservice:${{ github.sha }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Build and push cartservice
+        uses: docker/build-push-action@v5
+        with:
+          context: ./src/cartservice/src
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/cartservice:${{ github.sha }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Build and push recommendationservice
+        uses: docker/build-push-action@v5
+        with:
+          context: ./src/recommendationservice
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/recommendationservice:${{ github.sha }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Build and push shippingservice
+        uses: docker/build-push-action@v5
+        with:
+          context: ./src/shippingservice
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/shippingservice:${{ github.sha }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Build and push emailservice
+        uses: docker/build-push-action@v5
+        with:
+          context: ./src/emailservice
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/emailservice:${{ github.sha }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Build and push paymentservice
+        uses: docker/build-push-action@v5
+        with:
+          context: ./src/paymentservice
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/paymentservice:${{ github.sha }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Build and push adservice
+        uses: docker/build-push-action@v5
+        with:
+          context: ./src/adservice
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/adservice:${{ github.sha }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Create deployment summary
+        run: |
+          echo "## Docker Images Built" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Registry: ${{ env.REGISTRY }}" >> $GITHUB_STEP_SUMMARY
+          echo "Repository: ${{ env.IMAGE_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "Tag: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Services" >> $GITHUB_STEP_SUMMARY
+          echo "- frontend" >> $GITHUB_STEP_SUMMARY
+          echo "- checkoutservice" >> $GITHUB_STEP_SUMMARY
+          echo "- productcatalogservice" >> $GITHUB_STEP_SUMMARY
+          echo "- currencyservice" >> $GITHUB_STEP_SUMMARY
+          echo "- cartservice" >> $GITHUB_STEP_SUMMARY
+          echo "- recommendationservice" >> $GITHUB_STEP_SUMMARY
+          echo "- shippingservice" >> $GITHUB_STEP_SUMMARY
+          echo "- emailservice" >> $GITHUB_STEP_SUMMARY
+          echo "- paymentservice" >> $GITHUB_STEP_SUMMARY
+          echo "- adservice" >> $GITHUB_STEP_SUMMARY
