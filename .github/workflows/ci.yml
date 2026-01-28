@@ -40,8 +40,8 @@ jobs:
           echo "=== Checking if frontend responds ==="
           curl -f http://localhost:8080 || exit 1
 
-          echo "=== Checking if checkout responds ==="
-          curl -f http://localhost:5050 || exit 1
+          echo "=== Checking if checkout metrics responds ==="
+          curl -f http://localhost:8081/metrics || exit 1
 
           echo "=== All services are running ==="
 
@@ -70,7 +70,7 @@ jobs:
       - name: Run load generator
         run: |
           echo "=== Starting load generator for 30 seconds ==="
-          docker-compose exec -T loadgenerator sh -c "timeout 30 python -m locust -f locustfile.py --headless -u 5 -r 2 --run-time 30s" || true
+          docker compose exec -T loadgenerator sh -c "timeout 30 python -m locust -f locustfile.py --headless -u 5 -r 2 --run-time 30s" || true
           sleep 5
 
       - name: Verify metrics after load
