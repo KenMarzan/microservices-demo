@@ -18,24 +18,24 @@ jobs:
 
       - name: Build Docker images
         run: |
-          docker-compose build --no-cache
+          docker compose build --no-cache
 
       - name: Start microservices stack
         run: |
-          docker-compose up -d
+          docker compose up -d
           echo "Waiting for services to start..."
           sleep 15
 
       - name: Start monitoring stack
         run: |
-          docker-compose -f docker-compose.monitoring.yml up -d
+          docker compose -f docker-compose.monitoring.yml up -d
           echo "Waiting for monitoring to start..."
           sleep 10
 
       - name: Check service health
         run: |
           echo "=== Checking Docker Compose Services ==="
-          docker-compose ps
+          docker compose ps
 
           echo "=== Checking if frontend responds ==="
           curl -f http://localhost:8080 || exit 1
@@ -97,5 +97,5 @@ jobs:
         if: always()
         run: |
           echo "=== Stopping all services ==="
-          docker-compose -f docker-compose.monitoring.yml down -v || true
-          docker-compose down -v || true
+          docker compose -f docker-compose.monitoring.yml down -v || true
+          docker compose down -v || true
