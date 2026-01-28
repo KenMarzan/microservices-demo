@@ -124,6 +124,9 @@ func main() {
 
 	log.Infof("service config: %+v", svc)
 
+	// Start Prometheus metrics HTTP endpoint on separate port
+	startMetricsServer("8081")
+
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", port))
 	if err != nil {
 		log.Fatal(err)
@@ -137,6 +140,7 @@ func main() {
 			propagation.TraceContext{}, propagation.Baggage{}))
 	srv = grpc.NewServer(
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
+		grpc.ChainUnaryInterceptor(prometheusUnaryInterceptor()),
 	)
 
 	pb.RegisterCheckoutServiceServer(srv, svc)

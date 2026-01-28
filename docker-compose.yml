@@ -1,0 +1,179 @@
+version: "3.8"
+
+# Main microservices application stack
+# Run with: docker-compose up -d
+
+services:
+  # Frontend - Web UI
+  frontend:
+    build: ./src/frontend
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - PRODUCT_CATALOG_SERVICE_ADDR=productcatalogservice:3550
+      - CURRENCY_SERVICE_ADDR=currencyservice:7000
+      - CART_SERVICE_ADDR=cartservice:7070
+      - RECOMMENDATION_SERVICE_ADDR=recommendationservice:8080
+      - SHIPPING_SERVICE_ADDR=shippingservice:50051
+      - CHECKOUT_SERVICE_ADDR=checkoutservice:5050
+      - AD_SERVICE_ADDR=adservice:9555
+      - SHOPPING_ASSISTANT_SERVICE_ADDR=shoppingassistantservice:80
+      - ENABLE_TRACING=0
+      - ENABLE_PROFILER=0
+    depends_on:
+      - productcatalogservice
+      - currencyservice
+      - cartservice
+      - recommendationservice
+      - checkoutservice
+      - shippingservice
+      - adservice
+    networks:
+      - default
+
+  # Checkout Service
+  checkoutservice:
+    build: ./src/checkoutservice
+    ports:
+      - "5050:5050"
+      - "8081:8081" # Metrics endpoint
+    environment:
+      - PORT=5050
+      - PRODUCT_CATALOG_SERVICE_ADDR=productcatalogservice:3550
+      - SHIPPING_SERVICE_ADDR=shippingservice:50051
+      - PAYMENT_SERVICE_ADDR=paymentservice:50051
+      - EMAIL_SERVICE_ADDR=emailservice:8080
+      - CURRENCY_SERVICE_ADDR=currencyservice:7000
+      - CART_SERVICE_ADDR=cartservice:7070
+      - ENABLE_TRACING=0
+      - ENABLE_PROFILER=0
+    networks:
+      - default
+
+  # Product Catalog Service
+  productcatalogservice:
+    build: ./src/productcatalogservice
+    ports:
+      - "3550:3550"
+    environment:
+      - PORT=3550
+      - ENABLE_TRACING=0
+      - ENABLE_PROFILER=0
+    networks:
+      - default
+
+  # Currency Service
+  currencyservice:
+    build: ./src/currencyservice
+    ports:
+      - "7000:7000"
+    environment:
+      - PORT=7000
+      - DISABLE_PROFILER=1
+      - ENABLE_TRACING=0
+      - ENABLE_PROFILER=0
+    networks:
+      - default
+
+  # Cart Service
+  cartservice:
+    build: ./src/cartservice/src
+    ports:
+      - "7070:7070"
+    environment:
+      - REDIS_ADDR=redis-cart:6379
+      - ENABLE_TRACING=0
+      - ENABLE_PROFILER=0
+    depends_on:
+      - redis-cart
+    networks:
+      - default
+
+  # Redis for Cart Service
+  redis-cart:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - default
+
+  # Recommendation Service
+  recommendationservice:
+    build: ./src/recommendationservice
+    ports:
+      - "8082:8080"
+    environment:
+      - PORT=8080
+      - PRODUCT_CATALOG_SERVICE_ADDR=productcatalogservice:3550
+      - ENABLE_TRACING=0
+      - ENABLE_PROFILER=0
+    depends_on:
+      - productcatalogservice
+    networks:
+      - default
+
+  # Shipping Service
+  shippingservice:
+    build: ./src/shippingservice
+    ports:
+      - "50051:50051"
+    environment:
+      - PORT=50051
+      - ENABLE_TRACING=0
+      - ENABLE_PROFILER=0
+    networks:
+      - default
+
+  # Email Service
+  emailservice:
+    build: ./src/emailservice
+    ports:
+      - "8083:8080"
+    environment:
+      - PORT=8080
+      - ENABLE_TRACING=0
+      - ENABLE_PROFILER=0
+    networks:
+      - default
+
+  # Payment Service
+  paymentservice:
+    build: ./src/paymentservice
+    ports:
+      - "50052:50051"
+    environment:
+      - PORT=50051
+      - DISABLE_PROFILER=1
+      - ENABLE_TRACING=0
+      - ENABLE_PROFILER=0
+    networks:
+      - default
+
+  # Ad Service
+  adservice:
+    build: ./src/adservice
+    ports:
+      - "9555:9555"
+    environment:
+      - PORT=9555
+      - ENABLE_TRACING=0
+      - ENABLE_PROFILER=0
+    networks:
+      - default
+
+  # Load Generator
+  loadgenerator:
+    build: ./src/loadgenerator
+    environment:
+      - FRONTEND_ADDR=frontend:8080
+      - USERS=10
+    depends_on:
+      - frontend
+    networks:
+      - default
+
+networks:
+  default:
+    name: microservices-demo_default
+    driver: bridge

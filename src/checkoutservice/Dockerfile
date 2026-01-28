@@ -18,10 +18,14 @@ ARG TARGETARCH
 WORKDIR /src
 
 # restore dependencies
-COPY go.mod go.sum ./
-RUN go mod download
+COPY go.mod ./
+COPY go.sum* ./
 
 COPY . .
+
+# Update dependencies based on imported packages
+RUN go mod tidy
+RUN go mod download
 
 # Skaffold passes in debug-oriented compiler flags
 ARG SKAFFOLD_GO_GCFLAGS
